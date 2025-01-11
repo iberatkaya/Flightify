@@ -1,6 +1,6 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import MapView from '../features/mapView';
+import MapView from '../features/maps/components/mapView';
 import { RootStackParamList } from './types';
 
 
@@ -10,9 +10,12 @@ function NavigationStack() {
   return (
     <NavigationContainer>
       <Stack.Navigator>
-        <Stack.Screen 
+        <Stack.Screen
           name="MapView"
           component={MapView}
+          options={{
+            headerShown: false
+          }}
         />
       </Stack.Navigator>
     </NavigationContainer>

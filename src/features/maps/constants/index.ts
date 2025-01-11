@@ -1,0 +1,1 @@
+export const FLIGHT_STORAGE_KEY = '@flight_records';
