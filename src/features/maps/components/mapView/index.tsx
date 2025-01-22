@@ -1,39 +1,33 @@
 import React from 'react';
-import { View, StyleSheet, Pressable, Text } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import MapView, { Circle, Polyline } from 'react-native-maps';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { View, StyleSheet } from 'react-native';
+// import { useNavigation } from '@react-navigation/native';
+import Color from 'color';
+import MapView, { Circle, Polyline, Marker, LatLng } from 'react-native-maps';
 import { useEffect, useRef, useState } from 'react';
-import { MapViewNavigationProp } from './types';
-import { FlightRecord } from '../../types';
-import BottomSheet, { BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
-import { FLIGHT_STORAGE_KEY } from '../../constants';
-import { useDispatch, useSelector } from 'react-redux';
-import { RootState } from '../../../../store';
-import { addFlightRecord, removeFlightRecord, setFlightRecords } from '../../slices/flightRecordsSlice';
+// import { MapViewNavigationProp } from './types';
+import BottomSheet from '@gorhom/bottom-sheet';
+import { loadFromStorage } from '../../slices/flightRecordsSlice';
 import AddFlightSheet from '../addFlightBottomsheet';
+import { useAppDispatch, useAppSelector } from '../../../../store/hooks';
 
-export default function MapScreen() {
-  const navigation = useNavigation<MapViewNavigationProp>();
-  const dispatch = useDispatch();
-  const flightRecords = useSelector((state: RootState) => state.flightRecords.records);
+const MapScreen = () => {
+  // const navigation = useNavigation<MapViewNavigationProp>();
+  const dispatch = useAppDispatch();
+  const flightRecords = useAppSelector((state) => state.flightRecords.records);
+  console.log('flightRecords', flightRecords);
   const [latitudeDelta, setLatitudeDelta] = useState(60);
   const bottomSheetRef = useRef<BottomSheet>(null);
+  const [originCoords, setOriginCoords] = useState<LatLng | null>(null);
+  const [destinationCoords, setDestinationCoords] = useState<LatLng | null>(
+    null,
+  );
+  const [selectionMode, setSelectionMode] = useState<
+    'origin' | 'destination' | null
+  >(null);
 
   useEffect(() => {
-    const loadFlightRecords = async () => {
-      try {
-        const storedRecords = await AsyncStorage.getItem(FLIGHT_STORAGE_KEY);
-        if (storedRecords) {
-          dispatch(setFlightRecords(JSON.parse(storedRecords)));
-        }
-      } catch (error) {
-        console.error('Error loading flight records:', error);
-      }
-    };
-    loadFlightRecords();
+    dispatch(loadFromStorage());
   }, [dispatch]);
-
 
   return (
     <View style={styles.container}>
@@ -45,11 +39,32 @@ export default function MapScreen() {
           latitudeDelta: 60,
           longitudeDelta: 60,
         }}
-        mapType='satelliteFlyover'
+        mapType="satelliteFlyover"
         onRegionChange={(region) => {
           setLatitudeDelta(region.latitudeDelta);
         }}
-      >
+        onRegionChangeStart={(e) => {
+          console.log('onRegionChangeStart', e);
+        }}
+        onLongPress={(e) => {
+          if (selectionMode === 'origin') {
+            setOriginCoords(e.nativeEvent.coordinate);
+            bottomSheetRef.current?.snapToIndex(2);
+          } else if (selectionMode === 'destination') {
+            setDestinationCoords(e.nativeEvent.coordinate);
+            bottomSheetRef.current?.snapToIndex(2);
+          }
+        }}>
+        {originCoords && (
+          <Marker coordinate={originCoords} title="Origin" pinColor="green" />
+        )}
+        {destinationCoords && (
+          <Marker
+            coordinate={destinationCoords}
+            title="Destination"
+            pinColor="red"
+          />
+        )}
         {flightRecords.map((record) => (
           <React.Fragment key={record.id}>
             <Circle
@@ -57,9 +72,9 @@ export default function MapScreen() {
                 latitude: record.origin.latitude,
                 longitude: record.origin.longitude,
               }}
-              radius={50000 * (latitudeDelta / 60)} // Scales with zoom level
-              fillColor="rgba(220, 220, 255, 0.8)" // Modern blue with lower opacity
-              strokeColor="#2563eb" // Solid modern blue
+              radius={50000 * (latitudeDelta / 60)}
+              fillColor={Color(record.color).alpha(0.5).string()}
+              strokeColor={record.color}
               strokeWidth={1}
             />
             <Circle
@@ -68,8 +83,8 @@ export default function MapScreen() {
                 longitude: record.destination.longitude,
               }}
               radius={50000 * (latitudeDelta / 60)}
-              fillColor="rgba(220, 220, 255, 0.8)" // Modern blue with lower opacity
-              strokeColor="#2563eb" // Solid modern blue
+              fillColor={Color(record.color).alpha(0.5).string()}
+              strokeColor={record.color}
               strokeWidth={1}
             />
             <Polyline
@@ -81,9 +96,9 @@ export default function MapScreen() {
                 {
                   latitude: record.destination.latitude,
                   longitude: record.destination.longitude,
-                }
+                },
               ]}
-              strokeColor="#3b82f6" // Slightly lighter blue for the connection line
+              strokeColor={record.color}
               strokeWidth={2}
             />
           </React.Fragment>
@@ -92,10 +107,18 @@ export default function MapScreen() {
 
       <AddFlightSheet
         bottomSheetRef={bottomSheetRef}
+        destinationCoords={destinationCoords}
+        originCoords={originCoords}
+        onSelectionModeChange={setSelectionMode}
+        onSaveFlight={(flight) => {
+          console.log('onSaveFlight', flight);
+          setDestinationCoords(null);
+          setOriginCoords(null);
+        }}
       />
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -199,3 +222,5 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
+
+export default MapScreen;

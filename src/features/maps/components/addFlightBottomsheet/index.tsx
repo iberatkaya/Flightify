@@ -1,84 +1,86 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, Pressable, Text } from 'react-native';
-import BottomSheet, { BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
+import React, { useEffect, useState } from 'react';
+import { View, StyleSheet, Pressable, Text, Alert } from 'react-native';
+import BottomSheet, {
+  BottomSheetTextInput,
+  BottomSheetView,
+} from '@gorhom/bottom-sheet';
 import { FlightRecord } from '../../types';
 import { Props } from './types';
-import { addFlightRecord, removeFlightRecord } from '../../slices/flightRecordsSlice';
-import { useDispatch } from 'react-redux';
-import { useAppSelector } from '../../../../store/hooks';
+import { addFlight, deleteFlight } from '../../slices/flightRecordsSlice';
+import { useAppDispatch, useAppSelector } from '../../../../store/hooks';
+import { generateRandomColor } from '../../utils';
 
+// At the top of the file, add color constants
+const MAP_COLORS = {
+  origin: '#10B981', // Modern emerald green
+  destination: '#F43F5E', // Modern rose/coral red
+  inactive: '#94A3B8', // Slate gray for inactive state
+};
 
-
-const AddFlightSheet = ({ bottomSheetRef }: Props) => {
+const AddFlightSheet = ({
+  bottomSheetRef,
+  originCoords,
+  destinationCoords,
+  onSelectionModeChange,
+  onSaveFlight,
+}: Props) => {
   const flightRecords = useAppSelector((state) => state.flightRecords.records);
   const [isAddingFlight, setIsAddingFlight] = useState(false);
-  const [origin, setOrigin] = useState({ latitude: '', longitude: '', name: '' });
-  const [destination, setDestination] = useState({ latitude: '', longitude: '', name: '' });
-  const [errors, setErrors] = useState({ originLat: '', originLong: '', destLat: '', destLong: '' });
-  const dispatch = useDispatch();
-
-
-  const addFlightRecordToState = async (record: FlightRecord) => {
-    try {
-      dispatch(addFlightRecord(record));
-    } catch (error) {
-      console.error('Error saving flight record:', error);
-    }
-  };
+  const [selectionMode, setSelectionMode] = useState<
+    'origin' | 'destination' | null
+  >(null);
+  const [originCity, setOriginCity] = useState('');
+  const [destinationCity, setDestinationCity] = useState('');
+  const dispatch = useAppDispatch();
 
   const removeFlightRecordFromState = async (id: string) => {
     try {
-      dispatch(removeFlightRecord(id));
+      dispatch(deleteFlight(id));
     } catch (error) {
       console.error('Error removing flight record:', error);
     }
   };
 
-  const isValidCoordinate = (value: string): boolean => {
-    const num = parseFloat(value);
-    return !isNaN(num) && value.trim() !== '';
-  };
-
   const handleAddFlight = () => {
-    setErrors({ originLat: '', originLong: '', destLat: '', destLong: '' });
+    if (!originCoords || !destinationCoords) {
+      Alert.alert('Please select both origin and destination locations');
+      return;
+    }
 
-    const validationErrors = {
-      originLat: !isValidCoordinate(origin.latitude) ? 'Invalid latitude' : '',
-      originLong: !isValidCoordinate(origin.longitude) ? 'Invalid longitude' : '',
-      destLat: !isValidCoordinate(destination.latitude) ? 'Invalid latitude' : '',
-      destLong: !isValidCoordinate(destination.longitude) ? 'Invalid longitude' : ''
+    if (!originCity || !destinationCity) {
+      Alert.alert('Please enter both origin and destination city names');
+      return;
+    }
+    const record: FlightRecord = {
+      id: Date.now().toString(),
+      date: new Date(),
+      origin: {
+        latitude: originCoords.latitude,
+        longitude: originCoords.longitude,
+        name: originCity,
+      },
+      destination: {
+        latitude: destinationCoords.latitude,
+        longitude: destinationCoords.longitude,
+        name: destinationCity,
+      },
+      color: generateRandomColor(), // Add random color
     };
 
-    if (Object.values(validationErrors).every(error => error === '')) {
-      const record: FlightRecord = {
-        id: Date.now().toString(),
-        date: new Date(),
-        origin: {
-          latitude: parseFloat(origin.latitude),
-          longitude: parseFloat(origin.longitude),
-          name: origin.name
-        },
-        destination: {
-          latitude: parseFloat(destination.latitude),
-          longitude: parseFloat(destination.longitude),
-          name: destination.name
-        }
-      };
-      addFlightRecordToState(record);
-      setIsAddingFlight(false);
-      setOrigin({ latitude: '', longitude: '', name: '' });
-      setDestination({ latitude: '', longitude: '', name: '' });
-    } else {
-      setErrors(validationErrors);
-    }
+    dispatch(addFlight(record));
+    onSaveFlight?.(record);
+
+    setIsAddingFlight(false);
   };
 
+  useEffect(() => {
+    if (selectionMode) {
+      onSelectionModeChange?.(selectionMode);
+    }
+  });
+
   return (
-    <BottomSheet
-      ref={bottomSheetRef}
-      index={0}
-      snapPoints={['50%', '75%']}
-    >
+    <BottomSheet ref={bottomSheetRef} index={0} snapPoints={['30%', '75%']}>
       <BottomSheetView style={styles.bottomSheetContent}>
         {!isAddingFlight ? (
           <>
@@ -88,9 +90,8 @@ const AddFlightSheet = ({ bottomSheetRef }: Props) => {
                 style={styles.addButton}
                 onPress={() => {
                   bottomSheetRef.current?.snapToIndex(2);
-                  setIsAddingFlight(true)
-                }}
-              >
+                  setIsAddingFlight(true);
+                }}>
                 <Text style={styles.addButtonText}>+ Add Flight</Text>
               </Pressable>
             </View>
@@ -106,70 +107,77 @@ const AddFlightSheet = ({ bottomSheetRef }: Props) => {
                 </View>
                 <Pressable
                   style={styles.deleteButton}
-                  onPress={() => removeFlightRecordFromState(record.id)}
-                >
+                  onPress={() => removeFlightRecordFromState(record.id)}>
                   <Text style={styles.deleteButtonText}>Delete</Text>
                 </Pressable>
               </View>
             ))}
           </>
         ) : (
-          <View style={styles.addFlightContainer}>
+          <View>
             <View style={styles.header}>
               <Text style={styles.title}>Add New Flight</Text>
               <Pressable
-                style={styles.cancelButton}
-                onPress={() => setIsAddingFlight(false)}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                style={styles.closeButton}
+                onPress={() => {
+                  setIsAddingFlight(false);
+                  setSelectionMode(null);
+                  bottomSheetRef.current?.snapToIndex(0);
+                }}>
+                <Text style={styles.closeButtonText}>✕</Text>
               </Pressable>
             </View>
 
-            <Text>Origin</Text>
-            <BottomSheetTextInput
-              style={styles.input}
-              placeholder="Name"
-              value={origin.name}
-              onChangeText={(text) => setOrigin({ ...origin, name: text })}
-            />
-            <View style={styles.row}>
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Origin</Text>
+              <View style={styles.buttonContainer}>
+                <Pressable
+                  style={[
+                    styles.selectButton,
+                    selectionMode === 'origin' && styles.activeOriginButton,
+                  ]}
+                  onPress={() => {
+                    setSelectionMode('origin');
+                    bottomSheetRef.current?.snapToIndex(1);
+                  }}>
+                  <Text style={styles.buttonText}>
+                    {originCoords ? '✓ Origin Selected' : 'Select Origin'}
+                  </Text>
+                </Pressable>
+              </View>
               <BottomSheetTextInput
-                style={[styles.input, styles.half]}
-                placeholder="Latitude"
-                value={origin.latitude}
-                onChangeText={(text) => setOrigin({ ...origin, latitude: text })}
-                keyboardType="numeric"
-              />
-              <BottomSheetTextInput
-                style={[styles.input, styles.half]}
-                placeholder="Longitude"
-                value={origin.longitude}
-                onChangeText={(text) => setOrigin({ ...origin, longitude: text })}
-                keyboardType="numeric"
+                placeholder="Origin City"
+                value={originCity}
+                onChangeText={setOriginCity}
+                style={styles.textInput}
               />
             </View>
 
-            <Text>Destination</Text>
-            <BottomSheetTextInput
-              style={styles.input}
-              placeholder="Name"
-              value={destination.name}
-              onChangeText={(text) => setDestination({ ...destination, name: text })}
-            />
-            <View style={styles.row}>
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Destination</Text>
+              <View style={styles.buttonContainer}>
+                <Pressable
+                  style={[
+                    styles.selectButton,
+                    selectionMode === 'destination' &&
+                      styles.activeDestinationButton,
+                  ]}
+                  onPress={() => {
+                    setSelectionMode('destination');
+                    bottomSheetRef.current?.snapToIndex(1);
+                  }}>
+                  <Text style={styles.buttonText}>
+                    {destinationCoords
+                      ? '✓ Destination Selected'
+                      : 'Select Destination'}
+                  </Text>
+                </Pressable>
+              </View>
               <BottomSheetTextInput
-                style={[styles.input, styles.half]}
-                placeholder="Latitude"
-                value={destination.latitude}
-                onChangeText={(text) => setDestination({ ...destination, latitude: text })}
-                keyboardType="numeric"
-              />
-              <BottomSheetTextInput
-                style={[styles.input, styles.half]}
-                placeholder="Longitude"
-                value={destination.longitude}
-                onChangeText={(text) => setDestination({ ...destination, longitude: text })}
-                keyboardType="numeric"
+                placeholder="Destination City"
+                value={destinationCity}
+                onChangeText={setDestinationCity}
+                style={styles.textInput}
               />
             </View>
 
@@ -181,7 +189,7 @@ const AddFlightSheet = ({ bottomSheetRef }: Props) => {
       </BottomSheetView>
     </BottomSheet>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -279,10 +287,85 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 16,
+    marginHorizontal: 16,
   },
   saveButtonText: {
     color: 'white',
     fontWeight: 'bold',
+  },
+  selectionButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    padding: 16,
+  },
+  selectButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: MAP_COLORS.inactive,
+  },
+  activeOriginButton: {
+    backgroundColor: MAP_COLORS.origin,
+  },
+  activeDestinationButton: {
+    backgroundColor: MAP_COLORS.destination,
+  },
+  buttonText: {
+    textAlign: 'center',
+    fontSize: 16,
+  },
+  helpText: {
+    textAlign: 'center',
+    color: '#666',
+    marginTop: 8,
+  },
+  inputContainer: {
+    marginTop: 16,
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  textInput: {
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    fontSize: 16,
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginHorizontal: 16,
+    marginVertical: 8,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+    color: '#1F2937',
+  },
+  buttonContainer: {
+    marginBottom: 12,
+  },
+  closeButton: {
+    backgroundColor: '#ff3b30',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  closeButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '500',
   },
 });
 

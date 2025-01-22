@@ -1,6 +1,6 @@
 // src/store/flightRecords/flightRecordsSlice.ts
-import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import type { FlightRecord } from './types';
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import type { FlightRecord } from '../../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const flightStorageService = {
@@ -10,7 +10,17 @@ export const flightStorageService = {
     async loadFlights(): Promise<FlightRecord[]> {
         const data = await AsyncStorage.getItem(FLIGHT_STORAGE_KEY);
         return data ? JSON.parse(data) : [];
-    }
+    },
+    async saveNewFlight(flight: FlightRecord): Promise<void> {
+        const existingFlights = await this.loadFlights();
+        existingFlights.push(flight);
+        await this.saveFlights(existingFlights);
+    },
+    async deleteFlight(flightId: string): Promise<void> {
+        const existingFlights = await this.loadFlights();
+        const updatedFlights = existingFlights.filter(flight => flight.id !== flightId);
+        await this.saveFlights(updatedFlights);
+    },
 };
 
 const FLIGHT_STORAGE_KEY = 'flightRecords';
@@ -40,19 +50,26 @@ export const loadFromStorage = createAsyncThunk(
     async () => await flightStorageService.loadFlights()
 );
 
+export const deleteFlight = createAsyncThunk(
+    'flightRecords/delete',
+    async (flightId: string) => {
+        await flightStorageService.deleteFlight(flightId);
+        return flightId;
+    }
+);
+
+export const addFlight = createAsyncThunk(
+    'flightRecords/add',
+    async (flight: FlightRecord) => {
+        await flightStorageService.saveNewFlight(flight);
+        return flight;
+    }
+);
+
 export const flightRecordsSlice = createSlice({
     name: 'flightRecords',
     initialState,
     reducers: {
-        setFlightRecords: (state, action: PayloadAction<FlightRecord[]>) => {
-            state.records = action.payload;
-        },
-        addFlightRecord: (state, action: PayloadAction<FlightRecord>) => {
-            state.records.push(action.payload);
-        },
-        removeFlightRecord: (state, action: PayloadAction<string>) => {
-            state.records = state.records.filter(record => record.id !== action.payload);
-        },
     },
     extraReducers: (builder) => {
         builder
@@ -71,9 +88,33 @@ export const flightRecordsSlice = createSlice({
                 state.records = action.payload;
                 state.loading = false;
                 state.error = null;
+            })
+            .addCase(deleteFlight.pending, (state) => {
+                state.loading = true;
+            })
+            .addCase(deleteFlight.fulfilled, (state, action) => {
+                state.records = state.records.filter(record => record.id !== action.payload);
+                state.loading = false;
+                state.error = null;
+            })
+            .addCase(deleteFlight.rejected, (state, action) => {
+                state.loading = false;
+                state.error = action.error.message || 'Delete operation failed';
+            })
+            .addCase(addFlight.pending, (state) => {
+                state.loading = true;
+            })
+            .addCase(addFlight.fulfilled, (state, action) => {
+                state.records.push(action.payload);
+                state.loading = false;
+                state.error = null;
+            })
+            .addCase(addFlight.rejected, (state, action) => {
+                state.loading = false;
+                state.error = action.error.message || 'Add operation failed';
             });
     },
 });
 
-export const { setFlightRecords, addFlightRecord, removeFlightRecord } = flightRecordsSlice.actions;
+export const {  } = flightRecordsSlice.actions;
 export default flightRecordsSlice.reducer;
