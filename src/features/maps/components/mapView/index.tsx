@@ -1,29 +1,18 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
-// import { useNavigation } from '@react-navigation/native';
 import Color from 'color';
-import MapView, { Circle, Polyline, Marker, LatLng } from 'react-native-maps';
+import MapView, { Circle, Polyline, Marker } from 'react-native-maps';
 import { useEffect, useRef, useState } from 'react';
-// import { MapViewNavigationProp } from './types';
 import BottomSheet from '@gorhom/bottom-sheet';
 import { loadFromStorage } from '../../slices/flightRecordsSlice';
 import AddFlightSheet from '../addFlightBottomsheet';
 import { useAppDispatch, useAppSelector } from '../../../../store/hooks';
 
 const MapScreen = () => {
-  // const navigation = useNavigation<MapViewNavigationProp>();
   const dispatch = useAppDispatch();
   const flightRecords = useAppSelector((state) => state.flightRecords.records);
-  console.log('flightRecords', flightRecords);
   const [latitudeDelta, setLatitudeDelta] = useState(60);
   const bottomSheetRef = useRef<BottomSheet>(null);
-  const [originCoords, setOriginCoords] = useState<LatLng | null>(null);
-  const [destinationCoords, setDestinationCoords] = useState<LatLng | null>(
-    null,
-  );
-  const [selectionMode, setSelectionMode] = useState<
-    'origin' | 'destination' | null
-  >(null);
 
   useEffect(() => {
     dispatch(loadFromStorage());
@@ -42,29 +31,7 @@ const MapScreen = () => {
         mapType="satelliteFlyover"
         onRegionChange={(region) => {
           setLatitudeDelta(region.latitudeDelta);
-        }}
-        onRegionChangeStart={(e) => {
-          console.log('onRegionChangeStart', e);
-        }}
-        onLongPress={(e) => {
-          if (selectionMode === 'origin') {
-            setOriginCoords(e.nativeEvent.coordinate);
-            bottomSheetRef.current?.snapToIndex(2);
-          } else if (selectionMode === 'destination') {
-            setDestinationCoords(e.nativeEvent.coordinate);
-            bottomSheetRef.current?.snapToIndex(2);
-          }
         }}>
-        {originCoords && (
-          <Marker coordinate={originCoords} title="Origin" pinColor="green" />
-        )}
-        {destinationCoords && (
-          <Marker
-            coordinate={destinationCoords}
-            title="Destination"
-            pinColor="red"
-          />
-        )}
         {flightRecords.map((record) => (
           <React.Fragment key={record.id}>
             <Circle
@@ -105,17 +72,7 @@ const MapScreen = () => {
         ))}
       </MapView>
 
-      <AddFlightSheet
-        bottomSheetRef={bottomSheetRef}
-        destinationCoords={destinationCoords}
-        originCoords={originCoords}
-        onSelectionModeChange={setSelectionMode}
-        onSaveFlight={(flight) => {
-          console.log('onSaveFlight', flight);
-          setDestinationCoords(null);
-          setOriginCoords(null);
-        }}
-      />
+      <AddFlightSheet bottomSheetRef={bottomSheetRef} />
     </View>
   );
 };

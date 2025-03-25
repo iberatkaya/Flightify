@@ -6,7 +6,7 @@ export interface Location {
 
 export interface FlightRecord {
   id: string;
-  date: Date;
+  date: string;
   origin: Location;
   destination: Location;
   color: string; // New color property

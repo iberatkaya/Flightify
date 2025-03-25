@@ -1,14 +1,25 @@
-import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, Pressable, Text, Alert } from 'react-native';
+import React, { useState } from 'react';
+import {
+  View,
+  StyleSheet,
+  Pressable,
+  Text,
+  InteractionManager,
+} from 'react-native';
 import BottomSheet, {
-  BottomSheetTextInput,
+  BottomSheetFlatList,
+  BottomSheetScrollView,
   BottomSheetView,
 } from '@gorhom/bottom-sheet';
+import { v4 as uuidv4 } from 'uuid';
+import { AutocompleteDropdown } from 'react-native-autocomplete-dropdown';
+import DatePicker from 'react-native-date-picker';
 import { FlightRecord } from '../../types';
 import { Props } from './types';
 import { addFlight, deleteFlight } from '../../slices/flightRecordsSlice';
 import { useAppDispatch, useAppSelector } from '../../../../store/hooks';
 import { generateRandomColor } from '../../utils';
+import airports from '../../../../assets/large_airports.json';
 
 // At the top of the file, add color constants
 const MAP_COLORS = {
@@ -17,20 +28,13 @@ const MAP_COLORS = {
   inactive: '#94A3B8', // Slate gray for inactive state
 };
 
-const AddFlightSheet = ({
-  bottomSheetRef,
-  originCoords,
-  destinationCoords,
-  onSelectionModeChange,
-  onSaveFlight,
-}: Props) => {
+const AddFlightSheet = ({ bottomSheetRef, onSaveFlight }: Props) => {
   const flightRecords = useAppSelector((state) => state.flightRecords.records);
   const [isAddingFlight, setIsAddingFlight] = useState(false);
-  const [selectionMode, setSelectionMode] = useState<
-    'origin' | 'destination' | null
-  >(null);
-  const [originCity, setOriginCity] = useState('');
-  const [destinationCity, setDestinationCity] = useState('');
+  const [originAirportCode, setOriginAirportCode] = useState('');
+  const [destinationAirportCode, setDestinationAirportCode] = useState('');
+  const [flightDate, setFlightDate] = useState(new Date());
+  const [open, setOpen] = useState(false);
   const dispatch = useAppDispatch();
 
   const removeFlightRecordFromState = async (id: string) => {
@@ -42,27 +46,18 @@ const AddFlightSheet = ({
   };
 
   const handleAddFlight = () => {
-    if (!originCoords || !destinationCoords) {
-      Alert.alert('Please select both origin and destination locations');
-      return;
-    }
-
-    if (!originCity || !destinationCity) {
-      Alert.alert('Please enter both origin and destination city names');
-      return;
-    }
     const record: FlightRecord = {
-      id: Date.now().toString(),
-      date: new Date(),
+      id: uuidv4(),
+      date: flightDate.toISOString(),
       origin: {
-        latitude: originCoords.latitude,
-        longitude: originCoords.longitude,
-        name: originCity,
+        latitude: airports[originAirportCode].lat,
+        longitude: airports[originAirportCode].lon,
+        name: airports[originAirportCode].city,
       },
       destination: {
-        latitude: destinationCoords.latitude,
-        longitude: destinationCoords.longitude,
-        name: destinationCity,
+        latitude: airports[destinationAirportCode].lat,
+        longitude: airports[destinationAirportCode].lon,
+        name: airports[destinationAirportCode].city,
       },
       color: generateRandomColor(), // Add random color
     };
@@ -73,29 +68,40 @@ const AddFlightSheet = ({
     setIsAddingFlight(false);
   };
 
-  useEffect(() => {
-    if (selectionMode) {
-      onSelectionModeChange?.(selectionMode);
-    }
-  });
+  const dataSet = React.useMemo(
+    () =>
+      Object.entries(airports).map((i) => ({
+        title: `${i[1].name} (${i[1].iata})`,
+        id: i[0],
+      })),
+    [],
+  );
 
   return (
-    <BottomSheet ref={bottomSheetRef} index={0} snapPoints={['30%', '75%']}>
-      <BottomSheetView style={styles.bottomSheetContent}>
-        {!isAddingFlight ? (
-          <>
-            <View style={styles.header}>
-              <Text style={styles.title}>Flight Records</Text>
-              <Pressable
-                style={styles.addButton}
-                onPress={() => {
-                  bottomSheetRef.current?.snapToIndex(2);
+    <BottomSheet
+      ref={bottomSheetRef}
+      index={0}
+      snapPoints={['30%', '75%']}
+      enableDynamicSizing={false}>
+      {!isAddingFlight ? (
+        <BottomSheetView style={styles.bottomSheetContent}>
+          <View style={styles.header}>
+            <Text style={styles.title}>Flight Records</Text>
+            <Pressable
+              style={styles.addButton}
+              onPress={() => {
+                bottomSheetRef.current?.snapToIndex(1);
+                InteractionManager.runAfterInteractions(() => {
                   setIsAddingFlight(true);
-                }}>
-                <Text style={styles.addButtonText}>+ Add Flight</Text>
-              </Pressable>
-            </View>
-            {flightRecords.map((record) => (
+                });
+              }}>
+              <Text style={styles.addButtonText}>+ Add Flight</Text>
+            </Pressable>
+          </View>
+          <BottomSheetFlatList
+            data={flightRecords}
+            keyExtractor={(record) => record.id}
+            renderItem={({ item: record }) => (
               <View key={record.id} style={styles.listItem}>
                 <View style={styles.listItemContent}>
                   <Text style={styles.listItemText}>
@@ -106,87 +112,73 @@ const AddFlightSheet = ({
                   </Text>
                 </View>
                 <Pressable
-                  style={styles.deleteButton}
                   onPress={() => removeFlightRecordFromState(record.id)}>
-                  <Text style={styles.deleteButtonText}>Delete</Text>
+                  <Text style={styles.deleteButtonText}>🗑️</Text>
                 </Pressable>
               </View>
-            ))}
-          </>
-        ) : (
-          <View>
-            <View style={styles.header}>
-              <Text style={styles.title}>Add New Flight</Text>
-              <Pressable
-                style={styles.closeButton}
-                onPress={() => {
-                  setIsAddingFlight(false);
-                  setSelectionMode(null);
-                  bottomSheetRef.current?.snapToIndex(0);
-                }}>
-                <Text style={styles.closeButtonText}>✕</Text>
-              </Pressable>
-            </View>
-
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Origin</Text>
-              <View style={styles.buttonContainer}>
-                <Pressable
-                  style={[
-                    styles.selectButton,
-                    selectionMode === 'origin' && styles.activeOriginButton,
-                  ]}
-                  onPress={() => {
-                    setSelectionMode('origin');
-                    bottomSheetRef.current?.snapToIndex(1);
-                  }}>
-                  <Text style={styles.buttonText}>
-                    {originCoords ? '✓ Origin Selected' : 'Select Origin'}
-                  </Text>
-                </Pressable>
-              </View>
-              <BottomSheetTextInput
-                placeholder="Origin City"
-                value={originCity}
-                onChangeText={setOriginCity}
-                style={styles.textInput}
-              />
-            </View>
-
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Destination</Text>
-              <View style={styles.buttonContainer}>
-                <Pressable
-                  style={[
-                    styles.selectButton,
-                    selectionMode === 'destination' &&
-                      styles.activeDestinationButton,
-                  ]}
-                  onPress={() => {
-                    setSelectionMode('destination');
-                    bottomSheetRef.current?.snapToIndex(1);
-                  }}>
-                  <Text style={styles.buttonText}>
-                    {destinationCoords
-                      ? '✓ Destination Selected'
-                      : 'Select Destination'}
-                  </Text>
-                </Pressable>
-              </View>
-              <BottomSheetTextInput
-                placeholder="Destination City"
-                value={destinationCity}
-                onChangeText={setDestinationCity}
-                style={styles.textInput}
-              />
-            </View>
-
-            <Pressable style={styles.saveButton} onPress={handleAddFlight}>
-              <Text style={styles.saveButtonText}>Save Flight</Text>
+            )}
+          />
+        </BottomSheetView>
+      ) : (
+        <BottomSheetScrollView
+          contentContainerStyle={styles.bottomSheetContent}>
+          <View style={styles.header}>
+            <Text style={styles.title}>Add New Flight</Text>
+            <Pressable
+              style={styles.closeButton}
+              onPress={() => {
+                setIsAddingFlight(false);
+                bottomSheetRef.current?.snapToIndex(0);
+              }}>
+              <Text style={styles.closeButtonText}>✕</Text>
             </Pressable>
           </View>
-        )}
-      </BottomSheetView>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Origin</Text>
+            <AutocompleteDropdown
+              dataSet={dataSet}
+              onSelectItem={(item) => {
+                setOriginAirportCode(item?.id || '');
+                bottomSheetRef.current?.snapToIndex(1);
+              }}
+            />
+          </View>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Destination</Text>
+            <AutocompleteDropdown
+              dataSet={dataSet}
+              onSelectItem={(item) => {
+                setDestinationAirportCode(item?.id || '');
+                bottomSheetRef.current?.snapToIndex(1);
+              }}
+            />
+          </View>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Flight Date</Text>
+            <Pressable onPress={() => setOpen(true)}>
+              <Text style={styles.textInput}>
+                {flightDate.toLocaleDateString()}
+              </Text>
+            </Pressable>
+          </View>
+          <DatePicker
+            modal
+            open={open}
+            date={flightDate}
+            onConfirm={(date) => {
+              setOpen(false);
+              setFlightDate(date);
+            }}
+            onCancel={() => {
+              setOpen(false);
+            }}
+            mode="date"
+          />
+          <Pressable style={styles.saveButton} onPress={handleAddFlight}>
+            <Text style={styles.saveButtonText}>Save Flight</Text>
+          </Pressable>
+        </BottomSheetScrollView>
+      )}
     </BottomSheet>
   );
 };
@@ -252,16 +244,8 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 4,
   },
-  deleteButton: {
-    backgroundColor: '#ff3b30',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
   deleteButtonText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 13,
   },
   addFlightContainer: {
     flex: 1,
