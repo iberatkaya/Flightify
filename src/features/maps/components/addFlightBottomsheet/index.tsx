@@ -5,6 +5,8 @@ import {
   Pressable,
   Text,
   InteractionManager,
+  Switch,
+  Alert,
 } from 'react-native';
 import BottomSheet, {
   BottomSheetFlatList,
@@ -14,12 +16,15 @@ import BottomSheet, {
 import { v4 as uuidv4 } from 'uuid';
 import { AutocompleteDropdown } from 'react-native-autocomplete-dropdown';
 import DatePicker from 'react-native-date-picker';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlightRecord } from '../../types';
-import { Props } from './types';
+import { AirportsData, Props } from './types';
 import { addFlight, deleteFlight } from '../../slices/flightRecordsSlice';
 import { useAppDispatch, useAppSelector } from '../../../../store/hooks';
 import { generateRandomColor } from '../../utils';
-import airports from '../../../../assets/large_airports.json';
+
+// Import with type annotation
+const airports: AirportsData = require('../../../../assets/large_airports.json');
 
 // At the top of the file, add color constants
 const MAP_COLORS = {
@@ -33,8 +38,12 @@ const AddFlightSheet = ({ bottomSheetRef, onSaveFlight }: Props) => {
   const [isAddingFlight, setIsAddingFlight] = useState(false);
   const [originAirportCode, setOriginAirportCode] = useState('');
   const [destinationAirportCode, setDestinationAirportCode] = useState('');
-  const [flightDate, setFlightDate] = useState(new Date());
-  const [open, setOpen] = useState(false);
+  const [departureFlightDate, setDepartureFlightDate] = useState(new Date());
+  const [arrivalFlightDate, setArrivalFlightDate] = useState<Date | null>(null);
+  const [openDepartureDateModal, setOpenDepartureDateModal] = useState(false);
+  const [openArrivalDateModal, setOpenArrivalDateModal] = useState(false);
+  const [returnFlightToggleEnabled, setReturnFlightToggleEnabled] =
+    useState(false);
   const dispatch = useAppDispatch();
 
   const removeFlightRecordFromState = async (id: string) => {
@@ -46,18 +55,32 @@ const AddFlightSheet = ({ bottomSheetRef, onSaveFlight }: Props) => {
   };
 
   const handleAddFlight = () => {
+    // Return early if dates are invalid
+    if (
+      returnFlightToggleEnabled &&
+      arrivalFlightDate &&
+      departureFlightDate >= arrivalFlightDate
+    ) {
+      Alert.alert('Arrival date must be later than departure date');
+      return;
+    }
     const record: FlightRecord = {
       id: uuidv4(),
-      date: flightDate.toISOString(),
+      departureDate: departureFlightDate.toISOString(),
+      arrivalDate: returnFlightToggleEnabled
+        ? arrivalFlightDate?.toISOString() ?? new Date().toISOString()
+        : null,
       origin: {
         latitude: airports[originAirportCode].lat,
         longitude: airports[originAirportCode].lon,
         name: airports[originAirportCode].city,
+        code: airports[originAirportCode].iata,
       },
       destination: {
         latitude: airports[destinationAirportCode].lat,
         longitude: airports[destinationAirportCode].lon,
         name: airports[destinationAirportCode].city,
+        code: airports[destinationAirportCode].iata,
       },
       color: generateRandomColor(), // Add random color
     };
@@ -71,19 +94,17 @@ const AddFlightSheet = ({ bottomSheetRef, onSaveFlight }: Props) => {
   const dataSet = React.useMemo(
     () =>
       Object.entries(airports).map((i) => ({
-        title: `${i[1].name} (${i[1].iata})`,
+        title: `${i[1].name} ###${i[1].iata} ${i[1].city}`,
         id: i[0],
+        iata: i[1].iata,
+        city: i[1].city,
       })),
     [],
   );
 
-  return (
-    <BottomSheet
-      ref={bottomSheetRef}
-      index={0}
-      snapPoints={['30%', '75%']}
-      enableDynamicSizing={false}>
-      {!isAddingFlight ? (
+  const content = () => {
+    if (!isAddingFlight) {
+      return (
         <BottomSheetView style={styles.bottomSheetContent}>
           <View style={styles.header}>
             <Text style={styles.title}>Flight Records</Text>
@@ -104,12 +125,31 @@ const AddFlightSheet = ({ bottomSheetRef, onSaveFlight }: Props) => {
             renderItem={({ item: record }) => (
               <View key={record.id} style={styles.listItem}>
                 <View style={styles.listItemContent}>
-                  <Text style={styles.listItemText}>
-                    {`${record.origin.name} → ${record.destination.name}`}
-                  </Text>
+                  <View style={styles.flightDirectionRow}>
+                    <Text style={styles.listItemText}>
+                      {record.origin.name + ' (' + record.origin.code + ')'}
+                    </Text>
+                    <Text style={[styles.arrowText, { color: record.color }]}>
+                      {' '}
+                      →{' '}
+                    </Text>
+                    <Text style={styles.listItemText}>
+                      {record.destination.name +
+                        ' (' +
+                        record.destination.code +
+                        ')'}
+                    </Text>
+                  </View>
                   <Text style={styles.listItemSubtext}>
-                    {new Date(record.date).toLocaleDateString()}
+                    Departure:{' '}
+                    {new Date(record.departureDate).toLocaleDateString()}
                   </Text>
+                  {record.arrivalDate && (
+                    <Text style={styles.listItemSubtext}>
+                      Arrival:{' '}
+                      {new Date(record.arrivalDate).toLocaleDateString()}
+                    </Text>
+                  )}
                 </View>
                 <Pressable
                   onPress={() => removeFlightRecordFromState(record.id)}>
@@ -119,66 +159,141 @@ const AddFlightSheet = ({ bottomSheetRef, onSaveFlight }: Props) => {
             )}
           />
         </BottomSheetView>
-      ) : (
-        <BottomSheetScrollView
-          contentContainerStyle={styles.bottomSheetContent}>
-          <View style={styles.header}>
-            <Text style={styles.title}>Add New Flight</Text>
-            <Pressable
-              style={styles.closeButton}
-              onPress={() => {
-                setIsAddingFlight(false);
-                bottomSheetRef.current?.snapToIndex(0);
-              }}>
-              <Text style={styles.closeButtonText}>✕</Text>
-            </Pressable>
-          </View>
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Origin</Text>
-            <AutocompleteDropdown
-              dataSet={dataSet}
-              onSelectItem={(item) => {
-                setOriginAirportCode(item?.id || '');
-                bottomSheetRef.current?.snapToIndex(1);
-              }}
-            />
-          </View>
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Destination</Text>
-            <AutocompleteDropdown
-              dataSet={dataSet}
-              onSelectItem={(item) => {
-                setDestinationAirportCode(item?.id || '');
-                bottomSheetRef.current?.snapToIndex(1);
-              }}
-            />
-          </View>
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Flight Date</Text>
-            <Pressable onPress={() => setOpen(true)}>
-              <Text style={styles.textInput}>
-                {flightDate.toLocaleDateString()}
-              </Text>
-            </Pressable>
-          </View>
-          <DatePicker
-            modal
-            open={open}
-            date={flightDate}
-            onConfirm={(date) => {
-              setOpen(false);
-              setFlightDate(date);
-            }}
-            onCancel={() => {
-              setOpen(false);
-            }}
-            mode="date"
-          />
-          <Pressable style={styles.saveButton} onPress={handleAddFlight}>
-            <Text style={styles.saveButtonText}>Save Flight</Text>
+      );
+    }
+    return (
+      <BottomSheetScrollView contentContainerStyle={styles.bottomSheetContent}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Add New Flight</Text>
+          <Pressable
+            style={styles.closeButton}
+            onPress={() => {
+              setIsAddingFlight(false);
+              bottomSheetRef.current?.snapToIndex(0);
+            }}>
+            <Text style={styles.closeButtonText}>✕</Text>
           </Pressable>
-        </BottomSheetScrollView>
-      )}
+        </View>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Origin</Text>
+          <AutocompleteDropdown
+            dataSet={dataSet}
+            onSelectItem={(item) => {
+              setOriginAirportCode(item?.id || '');
+              bottomSheetRef.current?.snapToIndex(1);
+            }}
+            renderItem={(item) => {
+              return (
+                <View style={styles.dropdownItem}>
+                  <Text style={styles.buttonText}>
+                    {item.title?.split('###')[0]}
+                  </Text>
+                </View>
+              );
+            }}
+          />
+        </View>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Destination</Text>
+          <AutocompleteDropdown
+            dataSet={dataSet}
+            onSelectItem={(item) => {
+              setDestinationAirportCode(item?.id || '');
+              bottomSheetRef.current?.snapToIndex(1);
+            }}
+            renderItem={(item) => {
+              return (
+                <View style={styles.dropdownItem}>
+                  <Text style={styles.buttonText}>
+                    {item.title?.split('###')[0]}
+                  </Text>
+                </View>
+              );
+            }}
+          />
+        </View>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Departure Flight Date</Text>
+          <Pressable onPress={() => setOpenDepartureDateModal(true)}>
+            <Text style={styles.textInput}>
+              {departureFlightDate.toLocaleDateString()}
+            </Text>
+          </Pressable>
+
+          {returnFlightToggleEnabled && (
+            <View style={styles.returnDateContainer}>
+              <Text style={styles.cardTitle}>Arrival Flight Date</Text>
+              <Pressable onPress={() => setOpenArrivalDateModal(true)}>
+                <Text style={styles.textInput}>
+                  {arrivalFlightDate?.toLocaleDateString() ?? null}
+                </Text>
+              </Pressable>
+            </View>
+          )}
+
+          <View style={styles.returnRow}>
+            <Text style={styles.returnText}>Return Flight</Text>
+            <Switch
+              trackColor={{ false: '#CBD5E1', true: '#60A5FA' }}
+              thumbColor={returnFlightToggleEnabled ? '#F8FAFC' : '#F2F2F2'}
+              ios_backgroundColor="#CBD5E1"
+              onValueChange={() =>
+                setReturnFlightToggleEnabled(!returnFlightToggleEnabled)
+              }
+              value={returnFlightToggleEnabled}
+              style={styles.returnSwitch}
+            />
+          </View>
+        </View>
+        <Pressable style={styles.saveButton} onPress={handleAddFlight}>
+          <Text style={styles.saveButtonText}>Save Flight</Text>
+        </Pressable>
+      </BottomSheetScrollView>
+    );
+  };
+
+  return (
+    <BottomSheet
+      ref={bottomSheetRef}
+      index={0}
+      snapPoints={['30%', '75%']}
+      enableDynamicSizing={false}>
+      {content()}
+      <DatePicker
+        modal
+        open={openDepartureDateModal}
+        date={departureFlightDate}
+        onConfirm={(date) => {
+          setOpenDepartureDateModal(false);
+          setDepartureFlightDate(date);
+          // If arrival date exists and is earlier than new departure date, update it
+          if (arrivalFlightDate && date >= arrivalFlightDate) {
+            setArrivalFlightDate(
+              new Date(date.getTime() + 24 * 60 * 60 * 1000),
+            );
+          }
+        }}
+        onCancel={() => {
+          setOpenDepartureDateModal(false);
+        }}
+        mode="date"
+      />
+      <DatePicker
+        modal
+        open={openArrivalDateModal}
+        date={arrivalFlightDate ?? new Date()}
+        minimumDate={
+          new Date(departureFlightDate.getTime() + 24 * 60 * 60 * 1000)
+        }
+        onConfirm={(date) => {
+          setOpenArrivalDateModal(false);
+          setArrivalFlightDate(date);
+        }}
+        onCancel={() => {
+          setOpenArrivalDateModal(false);
+        }}
+        mode="date"
+      />
     </BottomSheet>
   );
 };
@@ -192,8 +307,8 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   bottomSheetContent: {
-    flex: 1,
     padding: 16,
+    paddingBottom: 32,
   },
   header: {
     flexDirection: 'row',
@@ -235,8 +350,16 @@ const styles = StyleSheet.create({
   listItemContent: {
     flex: 1,
   },
+  flightDirectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  arrowText: {
+    fontWeight: 'bold',
+    fontSize: 20,
+  },
   listItemText: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '500',
   },
   listItemSubtext: {
@@ -256,6 +379,25 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 8,
     marginVertical: 8,
+  },
+  returnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  returnText: {
+    fontSize: 14,
+    color: '#1F2937',
+    marginTop: 12,
+    marginRight: 8,
+  },
+  returnSwitch: {
+    marginTop: 12,
+    alignSelf: 'flex-end',
+    marginRight: 4,
+  },
+  returnDateContainer: {
+    marginTop: 16,
   },
   row: {
     flexDirection: 'row',
@@ -295,7 +437,6 @@ const styles = StyleSheet.create({
     backgroundColor: MAP_COLORS.destination,
   },
   buttonText: {
-    textAlign: 'center',
     fontSize: 16,
   },
   helpText: {
@@ -350,6 +491,12 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 14,
     fontWeight: '500',
+  },
+  dropdownItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
   },
 });
 

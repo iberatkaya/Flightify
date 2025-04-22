@@ -2,12 +2,14 @@ export interface Location {
   latitude: number;
   longitude: number;
   name: string;
+  code: string;
 }
 
 export interface FlightRecord {
   id: string;
-  date: string;
+  departureDate: string;
+  arrivalDate: string | null;
   origin: Location;
   destination: Location;
-  color: string; // New color property
+  color: string; 
 }
