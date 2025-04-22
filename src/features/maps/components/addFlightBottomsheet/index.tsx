@@ -7,6 +7,7 @@ import {
   InteractionManager,
   Switch,
   Alert,
+  TextInput,
 } from 'react-native';
 import BottomSheet, {
   BottomSheetFlatList,
@@ -126,18 +127,20 @@ const AddFlightSheet = ({ bottomSheetRef, onSaveFlight }: Props) => {
               <View key={record.id} style={styles.listItem}>
                 <View style={styles.listItemContent}>
                   <View style={styles.flightDirectionRow}>
-                    <Text style={styles.listItemText}>
-                      {record.origin.name + ' (' + record.origin.code + ')'}
-                    </Text>
-                    <Text style={[styles.arrowText, { color: record.color }]}>
-                      {' '}
-                      →{' '}
-                    </Text>
-                    <Text style={styles.listItemText}>
-                      {record.destination.name +
-                        ' (' +
-                        record.destination.code +
-                        ')'}
+                    <Text style={styles.textFlightRowContainer}>
+                      <Text style={styles.listItemText}>
+                        {record.origin.name + ' (' + record.origin.code + ')'}
+                      </Text>
+                      <Text style={[styles.arrowText, { color: record.color }]}>
+                        {' '}
+                        →{' '}
+                      </Text>
+                      <Text style={styles.listItemText}>
+                        {record.destination.name +
+                          ' (' +
+                          record.destination.code +
+                          ')'}
+                      </Text>
                     </Text>
                   </View>
                   <Text style={styles.listItemSubtext}>
@@ -182,6 +185,14 @@ const AddFlightSheet = ({ bottomSheetRef, onSaveFlight }: Props) => {
               setOriginAirportCode(item?.id || '');
               bottomSheetRef.current?.snapToIndex(1);
             }}
+            textInputProps={{
+              value: originAirportCode
+                ? dataSet
+                    .find((item) => item.id === originAirportCode)
+                    ?.title?.split('###')[0] || ''
+                : undefined,
+            }}
+            editable={!originAirportCode}
             renderItem={(item) => {
               return (
                 <View style={styles.dropdownItem}>
@@ -201,6 +212,14 @@ const AddFlightSheet = ({ bottomSheetRef, onSaveFlight }: Props) => {
               setDestinationAirportCode(item?.id || '');
               bottomSheetRef.current?.snapToIndex(1);
             }}
+            textInputProps={{
+              value: destinationAirportCode
+                ? dataSet
+                    .find((item) => item.id === destinationAirportCode)
+                    ?.title?.split('###')[0] || ''
+                : undefined,
+            }}
+            editable={!destinationAirportCode}
             renderItem={(item) => {
               return (
                 <View style={styles.dropdownItem}>
@@ -353,6 +372,9 @@ const styles = StyleSheet.create({
   flightDirectionRow: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  textFlightRowContainer: {
+    marginRight: 4,
   },
   arrowText: {
     fontWeight: 'bold',

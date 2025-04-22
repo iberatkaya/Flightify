@@ -187,7 +187,7 @@ const MapScreen = () => {
             const countryName = feature.properties.name;
             const countryVisited = visitedCountries[countryName];
 
-            // Skip countries that haven't been visited (either from or to)
+            // Skip countries that haven't been visited
             if (
               !countryVisited ||
               (!countryVisited.visitedFrom && !countryVisited.visitedTo)
@@ -195,31 +195,49 @@ const MapScreen = () => {
               return null;
             }
 
-            // Handle different geometry types
-            const coordinates =
-              feature.geometry.type === 'Polygon'
-                ? feature.geometry.coordinates[0].map((coord) => ({
-                    latitude: coord[1],
-                    longitude: coord[0],
-                  }))
-                : feature.geometry.type === 'MultiPolygon'
-                ? feature.geometry.coordinates[0][0].map((coord) => ({
-                    latitude: coord[1],
-                    longitude: coord[0],
-                  }))
-                : [];
+            if (feature.geometry.type === 'Polygon') {
+              // Handle single Polygon
+              const coordinates = feature.geometry.coordinates[0].map(
+                (coord) => ({
+                  latitude: coord[1],
+                  longitude: coord[0],
+                }),
+              );
 
-            return coordinates.length > 0 ? (
-              <Polygon
-                key={`country-${index}`}
-                coordinates={coordinates}
-                strokeColor={countryColors[countryName] || '#CCCCCC'}
-                fillColor={Color(getCountryColor(countryName))
-                  .alpha(0.35)
-                  .string()}
-                strokeWidth={0.5}
-              />
-            ) : null;
+              return (
+                <Polygon
+                  key={`country-${index}`}
+                  coordinates={coordinates}
+                  strokeColor={countryColors[countryName] || '#CCCCCC'}
+                  fillColor={Color(getCountryColor(countryName))
+                    .alpha(0.35)
+                    .string()}
+                  strokeWidth={0.5}
+                />
+              );
+            } else if (feature.geometry.type === 'MultiPolygon') {
+              // Handle MultiPolygon by creating multiple Polygon components
+              return (
+                <React.Fragment key={`country-${index}`}>
+                  {feature.geometry.coordinates.map((poly, polyIndex) => (
+                    <Polygon
+                      key={`country-${index}-part-${polyIndex}`}
+                      coordinates={poly[0].map((coord) => ({
+                        latitude: coord[1],
+                        longitude: coord[0],
+                      }))}
+                      strokeColor={countryColors[countryName] || '#CCCCCC'}
+                      fillColor={Color(getCountryColor(countryName))
+                        .alpha(0.35)
+                        .string()}
+                      strokeWidth={0.5}
+                    />
+                  ))}
+                </React.Fragment>
+              );
+            }
+
+            return null;
           })}
         </>
         {flightRecords.map((record) => (
