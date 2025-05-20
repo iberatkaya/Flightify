@@ -35,6 +35,10 @@ const MAP_COLORS = {
 const AddFlightSheet = ({ bottomSheetRef, onSaveFlight }: Props) => {
   const flightRecords = useAppSelector((state) => state.flightRecords.records);
   const [isAddingFlight, setIsAddingFlight] = useState(false);
+  const [isEditingFlight, setIsEditingFlight] = useState(false);
+  const [currentEditingFlightId, setCurrentEditingFlightId] = useState<
+    string | null
+  >(null);
   const [originAirportCode, setOriginAirportCode] = useState('');
   const [destinationAirportCode, setDestinationAirportCode] = useState('');
   const [departureFlightDate, setDepartureFlightDate] = useState(new Date());
@@ -44,6 +48,112 @@ const AddFlightSheet = ({ bottomSheetRef, onSaveFlight }: Props) => {
   const [returnFlightToggleEnabled, setReturnFlightToggleEnabled] =
     useState(false);
   const dispatch = useAppDispatch();
+
+  // Reset form state function
+  const resetFormState = () => {
+    setOriginAirportCode('');
+    setDestinationAirportCode('');
+    setDepartureFlightDate(new Date());
+    setArrivalFlightDate(null);
+    setReturnFlightToggleEnabled(false);
+    setCurrentEditingFlightId(null);
+  };
+
+  // Function to start editing a flight
+  const startEditingFlight = (flightId: string) => {
+    const flightToEdit = flightRecords.find((record) => record.id === flightId);
+
+    if (flightToEdit) {
+      // Find airport code from stored coordinates
+      const findAirportCode = (lat: number, lon: number): string => {
+        // Find the closest airport based on coordinates
+        return (
+          Object.entries(airports).find(
+            ([_, airport]) => airport.lat === lat && airport.lon === lon,
+          )?.[0] || ''
+        );
+      };
+
+      setOriginAirportCode(
+        findAirportCode(
+          flightToEdit.origin.latitude,
+          flightToEdit.origin.longitude,
+        ),
+      );
+      setDestinationAirportCode(
+        findAirportCode(
+          flightToEdit.destination.latitude,
+          flightToEdit.destination.longitude,
+        ),
+      );
+      setDepartureFlightDate(new Date(flightToEdit.departureDate));
+
+      if (flightToEdit.arrivalDate) {
+        setArrivalFlightDate(new Date(flightToEdit.arrivalDate));
+        setReturnFlightToggleEnabled(true);
+      } else {
+        setArrivalFlightDate(null);
+        setReturnFlightToggleEnabled(false);
+      }
+
+      setCurrentEditingFlightId(flightId);
+      setIsEditingFlight(true);
+      setIsAddingFlight(false);
+      bottomSheetRef.current?.snapToIndex(1);
+    }
+  };
+
+  // Handle edit flight submission
+  const handleEditFlight = () => {
+    if (!currentEditingFlightId) return;
+
+    // Return early if dates are invalid
+    if (
+      returnFlightToggleEnabled &&
+      arrivalFlightDate &&
+      departureFlightDate >= arrivalFlightDate
+    ) {
+      Alert.alert('Arrival date must be later than departure date');
+      return;
+    }
+
+    const updatedRecord: FlightRecord = {
+      id: uuidv4(),
+      departureDate: departureFlightDate.toISOString(),
+      arrivalDate: returnFlightToggleEnabled
+        ? arrivalFlightDate?.toISOString() ?? null
+        : null,
+      origin: {
+        latitude: airports[originAirportCode].lat,
+        longitude: airports[originAirportCode].lon,
+        name: airports[originAirportCode].city,
+        code: airports[originAirportCode].iata,
+      },
+      destination: {
+        latitude: airports[destinationAirportCode].lat,
+        longitude: airports[destinationAirportCode].lon,
+        name: airports[destinationAirportCode].city,
+        code: airports[destinationAirportCode].iata,
+      },
+      // Keep the existing color
+      color:
+        flightRecords.find((r) => r.id === currentEditingFlightId)?.color ||
+        generateRandomColor(),
+    };
+
+    // Delete old flight and add updated one
+    dispatch(deleteFlight(currentEditingFlightId));
+    dispatch(addFlight(updatedRecord));
+
+    if (onSaveFlight) {
+      onSaveFlight(updatedRecord);
+    }
+
+    // Reset state and go back to list view
+    resetFormState();
+    setIsEditingFlight(false);
+    bottomSheetRef.current?.snapToIndex(0);
+  };
 
   const removeFlightRecordFromState = async (id: string) => {
     try {
@@ -87,7 +197,10 @@ const AddFlightSheet = ({ bottomSheetRef, onSaveFlight }: Props) => {
     dispatch(addFlight(record));
     onSaveFlight?.(record);
 
+    // Reset form after adding
+    resetFormState();
     setIsAddingFlight(false);
+    bottomSheetRef.current?.snapToIndex(0);
   };
 
   const dataSet = React.useMemo(
@@ -102,7 +215,7 @@ const AddFlightSheet = ({ bottomSheetRef, onSaveFlight }: Props) => {
   );
 
   const content = () => {
-    if (!isAddingFlight) {
+    if (!isAddingFlight && !isEditingFlight) {
       return (
         <BottomSheetView style={styles.bottomSheetContent}>
           <View style={styles.header}>
@@ -112,6 +225,7 @@ const AddFlightSheet = ({ bottomSheetRef, onSaveFlight }: Props) => {
               onPress={() => {
                 bottomSheetRef.current?.snapToIndex(1);
                 InteractionManager.runAfterInteractions(() => {
+                  resetFormState();
                   setIsAddingFlight(true);
                 });
               }}>
@@ -122,7 +236,9 @@ const AddFlightSheet = ({ bottomSheetRef, onSaveFlight }: Props) => {
             data={flightRecords}
             keyExtractor={(record) => record.id}
             renderItem={({ item: record }) => (
-              <View key={record.id} style={styles.listItem}>
+              <Pressable
+                onPress={() => startEditingFlight(record.id)}
+                style={styles.listItem}>
                 <View style={styles.listItemContent}>
                   <View style={styles.flightDirectionRow}>
                     <Text style={styles.textFlightRowContainer}>
@@ -151,25 +267,36 @@ const AddFlightSheet = ({ bottomSheetRef, onSaveFlight }: Props) => {
                       {new Date(record.arrivalDate).toLocaleDateString()}
                     </Text>
                   )}
+                  <Text style={styles.tapToEditText}>Tap to edit</Text>
                 </View>
                 <Pressable
-                  onPress={() => removeFlightRecordFromState(record.id)}>
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    removeFlightRecordFromState(record.id);
+                  }}
+                  style={styles.deleteButton}>
                   <Text style={styles.deleteButtonText}>🗑️</Text>
                 </Pressable>
-              </View>
+              </Pressable>
             )}
           />
         </BottomSheetView>
       );
     }
+
+    // Common form for both add and edit modes
     return (
       <BottomSheetScrollView contentContainerStyle={styles.bottomSheetContent}>
         <View style={styles.header}>
-          <Text style={styles.title}>Add New Flight</Text>
+          <Text style={styles.title}>
+            {isAddingFlight ? 'Add New Flight' : 'Edit Flight'}
+          </Text>
           <Pressable
             style={styles.closeButton}
             onPress={() => {
               setIsAddingFlight(false);
+              setIsEditingFlight(false);
+              resetFormState();
               bottomSheetRef.current?.snapToIndex(0);
             }}>
             <Text style={styles.closeButtonText}>✕</Text>
@@ -190,7 +317,9 @@ const AddFlightSheet = ({ bottomSheetRef, onSaveFlight }: Props) => {
                     ?.title?.split('###')[0] || ''
                 : undefined,
             }}
-            editable={!originAirportCode}
+            editable={
+              !originAirportCode || (isEditingFlight && !isAddingFlight)
+            }
             renderItem={(item) => {
               return (
                 <View style={styles.dropdownItem}>
@@ -262,8 +391,12 @@ const AddFlightSheet = ({ bottomSheetRef, onSaveFlight }: Props) => {
             />
           </View>
         </View>
-        <Pressable style={styles.saveButton} onPress={handleAddFlight}>
-          <Text style={styles.saveButtonText}>Save Flight</Text>
+        <Pressable
+          style={styles.saveButton}
+          onPress={isEditingFlight ? handleEditFlight : handleAddFlight}>
+          <Text style={styles.saveButtonText}>
+            {isEditingFlight ? 'Update Flight' : 'Save Flight'}
+          </Text>
         </Pressable>
       </BottomSheetScrollView>
     );
@@ -517,6 +650,14 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: 'flex-start',
     justifyContent: 'flex-start',
+  },
+  tapToEditText: {
+    fontSize: 12,
+    color: '#007AFF',
+    marginTop: 4,
+  },
+  deleteButton: {
+    padding: 8,
   },
 });
 
