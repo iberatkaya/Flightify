@@ -1,4 +1,4 @@
-package com.flightify
+package com.kaya.flightify
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

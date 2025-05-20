@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
 import Color from 'color';
 import MapView, { Circle, Polyline, Polygon } from 'react-native-maps';
 import { useEffect, useRef, useState } from 'react';
@@ -109,7 +109,9 @@ const MapScreen = () => {
     point: { latitude: number; longitude: number },
     feature: GeoJSONFeature,
   ): boolean => {
-    if (!feature.geometry) return false;
+    if (!feature.geometry) {
+      return false;
+    }
 
     const { latitude, longitude } = point;
 
@@ -168,7 +170,7 @@ const MapScreen = () => {
           latitudeDelta: 60,
           longitudeDelta: 60,
         }}
-        mapType="satelliteFlyover"
+        mapType={Platform.OS === 'android' ? 'satellite' : 'satelliteFlyover'}
         onRegionChange={(region) => {
           setLatitudeDelta(region.latitudeDelta);
         }}>
@@ -210,7 +212,7 @@ const MapScreen = () => {
                   coordinates={coordinates}
                   strokeColor={countryColors[countryName] || '#CCCCCC'}
                   fillColor={Color(getCountryColor(countryName))
-                    .alpha(0.35)
+                    .alpha(0.5)
                     .string()}
                   strokeWidth={0.5}
                 />

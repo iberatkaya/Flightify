@@ -7,7 +7,6 @@ import {
   InteractionManager,
   Switch,
   Alert,
-  TextInput,
 } from 'react-native';
 import BottomSheet, {
   BottomSheetFlatList,
@@ -17,7 +16,6 @@ import BottomSheet, {
 import { v4 as uuidv4 } from 'uuid';
 import { AutocompleteDropdown } from 'react-native-autocomplete-dropdown';
 import DatePicker from 'react-native-date-picker';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlightRecord } from '../../types';
 import { AirportsData, Props } from './types';
 import { addFlight, deleteFlight } from '../../slices/flightRecordsSlice';
