@@ -1,13 +1,19 @@
 import React from 'react';
-import { View, StyleSheet, Platform } from 'react-native';
+import { View, StyleSheet, Platform, InteractionManager } from 'react-native';
 import Color from 'color';
 import MapView, { Circle, Polyline, Polygon } from 'react-native-maps';
 import { useEffect, useRef, useState } from 'react';
 import BottomSheet from '@gorhom/bottom-sheet';
-import { loadFromStorage } from '../../slices/flightRecordsSlice';
+import {
+  loadFromStorage,
+  updateFlightColor,
+} from '../../slices/flightRecordsSlice';
 import AddFlightSheet from '../addFlightBottomsheet';
 import { useAppDispatch, useAppSelector } from '../../../../store/hooks';
 import { GeoJSONFeature } from './types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import ColorPicker from '../colorPicker';
+import { FlightRecord } from '../../types';
 
 // Import with type assertion
 const features: GeoJSONFeature[] =
@@ -18,6 +24,12 @@ const MapScreen = () => {
   const flightRecords = useAppSelector((state) => state.flightRecords.records);
   const [latitudeDelta, setLatitudeDelta] = useState(60);
   const bottomSheetRef = useRef<BottomSheet>(null);
+  // Add state for selected country
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
+  const [selectedFlight, setSelectedFlight] = useState<FlightRecord | null>(
+    null,
+  );
+  const [loadedCountryColors, setLoadedCountryColors] = useState(false);
 
   useEffect(() => {
     dispatch(loadFromStorage());
@@ -27,40 +39,109 @@ const MapScreen = () => {
     {},
   );
 
-  useEffect(() => {
-    // Generate random colors for countries if not already set
-    if (Object.keys(countryColors).length === 0) {
-      const newColors: { [key: string]: string } = {};
+  const updateFlightColorHandler = (flightId: string, color: string) => {
+    dispatch(updateFlightColor({ id: flightId, color }));
+    setSelectedFlight(null); // Close the color picker after selection
+  };
 
-      features.forEach((feature) => {
-        if (feature.properties && feature.properties.name) {
-          const countryName = feature.properties.name;
-          if (!newColors[countryName]) {
-            // Generate a random color in hex format
-            // Generate a darker random color by using a lower range in the RGB values
-            const generateNonGreenColor = () => {
-              // Use HSL to avoid green colors (green is around 120 degrees in hue)
-              const hue = Math.floor(Math.random() * 360);
+  const setCountryColorsRandomly = () => {
+    const newColors: { [key: string]: string } = {};
 
-              // Skip hues between 90-150 (green range)
-              const adjustedHue = hue < 90 ? hue : hue + 60;
-              const finalHue = adjustedHue % 360;
+    features.forEach((feature) => {
+      if (feature.properties && feature.properties.name) {
+        const countryName = feature.properties.name;
+        if (!newColors[countryName]) {
+          // Generate a random color in hex format
+          // Generate a darker random color by using a lower range in the RGB values
+          const generateNonGreenColor = () => {
+            // Use HSL to avoid green colors (green is around 120 degrees in hue)
+            const hue = Math.floor(Math.random() * 360);
 
-              // Lower saturation and lightness for darker colors
-              const saturation = 70 + Math.floor(Math.random() * 30); // 70-99%
-              const lightness = 15 + Math.floor(Math.random() * 25); // 15-39%
+            // Skip hues between 90-150 (green range)
+            const adjustedHue = hue < 90 ? hue : hue + 60;
+            const finalHue = adjustedHue % 360;
 
-              return `hsl(${finalHue}, ${saturation}%, ${lightness}%)`;
-            };
+            // Lower saturation and lightness for darker colors
+            const saturation = 70 + Math.floor(Math.random() * 30); // 70-99%
+            const lightness = 15 + Math.floor(Math.random() * 25); // 15-39%
 
-            const randomColor = generateNonGreenColor();
-            newColors[countryName] = randomColor;
-          }
+            return `hsl(${finalHue}, ${saturation}%, ${lightness}%)`;
+          };
+
+          const randomColor = generateNonGreenColor();
+          newColors[countryName] = randomColor;
         }
-      });
+      }
+    });
 
-      setCountryColors(newColors);
+    setCountryColors(newColors);
+    saveColorsToStorage(newColors);
+  };
+
+  // Function to update a single country color in local storage
+  const updateCountryColorInStorage = async (
+    countryName: string,
+    color: string,
+  ) => {
+    try {
+      // Get current colors from storage
+      const storedColors = await loadColorsFromStorage();
+      if (storedColors) {
+        // Update the specific country color
+        const updatedColors = {
+          ...storedColors,
+          [countryName]: color,
+        };
+
+        // Save updated colors back to storage
+        await AsyncStorage.setItem(
+          'countryColors',
+          JSON.stringify(updatedColors),
+        );
+
+        // Update state
+        setCountryColors(updatedColors);
+      }
+    } catch (error) {
+      console.error('Failed to update country color in storage:', error);
     }
+  };
+
+  const saveColorsToStorage = async (colors: typeof countryColors) => {
+    try {
+      if (Object.keys(colors).length > 0) {
+        await AsyncStorage.setItem(
+          'countryColors',
+          JSON.stringify(countryColors),
+        );
+      }
+    } catch (error) {
+      console.error('Failed to save country colors to storage:', error);
+    }
+  };
+
+  const loadColorsFromStorage = async () => {
+    try {
+      const storedColors = await AsyncStorage.getItem('countryColors');
+      if (storedColors) {
+        return JSON.parse(storedColors);
+      }
+    } catch (error) {
+      console.error('Failed to load country colors from storage:', error);
+    }
+  };
+
+  // Effect to load country colors from local storage on initial mount
+  useEffect(() => {
+    loadColorsFromStorage().then((colors) => {
+      if (colors) {
+        setCountryColors(colors);
+      } else {
+        // If no colors are stored, generate and set them
+        setCountryColorsRandomly();
+      }
+      setLoadedCountryColors(true);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -71,36 +152,34 @@ const MapScreen = () => {
 
   // Update visited countries based on flight records
   useEffect(() => {
-    if (flightRecords.length > 0 && features.length > 0) {
-      const updatedVisitedCountries = { ...visitedCountries };
+    const updatedVisitedCountries = { ...visitedCountries };
 
-      flightRecords.forEach((record) => {
-        // Check each country's polygon to see if it contains origin or destination
-        features.forEach((feature) => {
-          if (!feature.properties || !feature.properties.name) return;
+    flightRecords.forEach((record) => {
+      // Check each country's polygon to see if it contains origin or destination
+      features.forEach((feature) => {
+        if (!feature.properties || !feature.properties.name) return;
 
-          const countryName = feature.properties.name;
-          if (!updatedVisitedCountries[countryName]) {
-            updatedVisitedCountries[countryName] = {
-              visitedFrom: false,
-              visitedTo: false,
-            };
-          }
+        const countryName = feature.properties.name;
+        if (!updatedVisitedCountries[countryName]) {
+          updatedVisitedCountries[countryName] = {
+            visitedFrom: false,
+            visitedTo: false,
+          };
+        }
 
-          // Check if the origin point is in this country
-          if (isPointInCountry(record.origin, feature)) {
-            updatedVisitedCountries[countryName].visitedFrom = true;
-          }
+        // Check if the origin point is in this country
+        if (isPointInCountry(record.origin, feature)) {
+          updatedVisitedCountries[countryName].visitedFrom = true;
+        }
 
-          // Check if the destination point is in this country
-          if (isPointInCountry(record.destination, feature)) {
-            updatedVisitedCountries[countryName].visitedTo = true;
-          }
-        });
+        // Check if the destination point is in this country
+        if (isPointInCountry(record.destination, feature)) {
+          updatedVisitedCountries[countryName].visitedTo = true;
+        }
       });
+    });
 
-      setVisitedCountries(updatedVisitedCountries);
-    }
+    setVisitedCountries(updatedVisitedCountries);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flightRecords, features]);
 
@@ -160,6 +239,42 @@ const MapScreen = () => {
     return countryColors[countryName] || '#CCCCCC'; // Default gray if not found
   };
 
+  // Function to update a country's color
+  const updateCountryColor = (countryName: string, color: string) => {
+    setCountryColors((prev) => ({
+      ...prev,
+      [countryName]: color,
+    }));
+    updateCountryColorInStorage(countryName, color);
+    setSelectedCountry(null); // Close the color picker after selection
+  };
+
+  // Function to find which country contains the clicked point
+  const findCountryAtPoint = (point: {
+    latitude: number;
+    longitude: number;
+  }) => {
+    for (const feature of features) {
+      if (!feature.properties || !feature.properties.name) {
+        continue;
+      }
+      if (isPointInCountry(point, feature)) {
+        return feature.properties.name;
+      }
+    }
+    return null;
+  };
+
+  const [showColorModal, setShowColorModal] = useState(false);
+
+  useEffect(() => {
+    if (selectedCountry || selectedFlight) {
+      setShowColorModal(true);
+    } else {
+      setShowColorModal(false);
+    }
+  }, [selectedCountry, selectedFlight]);
+
   return (
     <View style={styles.container}>
       <MapView
@@ -173,116 +288,171 @@ const MapScreen = () => {
         mapType={Platform.OS === 'android' ? 'satellite' : 'satelliteFlyover'}
         onRegionChange={(region) => {
           setLatitudeDelta(region.latitudeDelta);
+        }}
+        onPress={(e) => {
+          // Find which country was clicked
+          const clickedCountry = findCountryAtPoint(e.nativeEvent.coordinate);
+          setSelectedCountry(clickedCountry);
         }}>
-        <>
-          {/* Country borders from GeoJSON */}
-          {features.map((feature, index) => {
-            // Skip features without valid geometry or name
-            if (
-              !feature.geometry ||
-              !feature.geometry.coordinates ||
-              !feature.properties?.name
-            ) {
+        {loadedCountryColors && (
+          <>
+            {/* Country borders from GeoJSON */}
+            {features.map((feature, index) => {
+              // Skip features without valid geometry or name
+              if (
+                !feature.geometry ||
+                !feature.geometry.coordinates ||
+                !feature.properties?.name
+              ) {
+                return null;
+              }
+
+              const countryName = feature.properties.name;
+              const countryVisited = visitedCountries[countryName];
+
+              // Skip countries that haven't been visited
+              if (
+                !countryVisited ||
+                (!countryVisited.visitedFrom && !countryVisited.visitedTo)
+              ) {
+                return null;
+              }
+
+              if (feature.geometry.type === 'Polygon') {
+                // Handle single Polygon
+                const coordinates = feature.geometry.coordinates[0].map(
+                  (coord) => ({
+                    latitude: coord[1],
+                    longitude: coord[0],
+                  }),
+                );
+
+                return (
+                  <Polygon
+                    key={`country-${index}`}
+                    coordinates={coordinates}
+                    strokeColor={
+                      Color(countryColors[countryName]).alpha(0.8).string() ||
+                      '#CCCCCC'
+                    }
+                    fillColor={Color(getCountryColor(countryName))
+                      .alpha(0.45)
+                      .string()}
+                    strokeWidth={0.8}
+                  />
+                );
+              } else if (feature.geometry.type === 'MultiPolygon') {
+                // Handle MultiPolygon by creating multiple Polygon components
+                return (
+                  <React.Fragment key={`country-${index}`}>
+                    {feature.geometry.coordinates.map((poly, polyIndex) => (
+                      <Polygon
+                        key={`country-${index}-part-${polyIndex}`}
+                        coordinates={poly[0].map((coord) => ({
+                          latitude: coord[1],
+                          longitude: coord[0],
+                        }))}
+                        strokeColor={
+                          Color(countryColors[countryName])
+                            .alpha(0.8)
+                            .string() || '#CCCCCC'
+                        }
+                        fillColor={Color(getCountryColor(countryName))
+                          .alpha(0.45)
+                          .string()}
+                        strokeWidth={0.8}
+                      />
+                    ))}
+                  </React.Fragment>
+                );
+              }
+
               return null;
-            }
-
-            const countryName = feature.properties.name;
-            const countryVisited = visitedCountries[countryName];
-
-            // Skip countries that haven't been visited
-            if (
-              !countryVisited ||
-              (!countryVisited.visitedFrom && !countryVisited.visitedTo)
-            ) {
-              return null;
-            }
-
-            if (feature.geometry.type === 'Polygon') {
-              // Handle single Polygon
-              const coordinates = feature.geometry.coordinates[0].map(
-                (coord) => ({
-                  latitude: coord[1],
-                  longitude: coord[0],
-                }),
-              );
-
-              return (
-                <Polygon
-                  key={`country-${index}`}
-                  coordinates={coordinates}
-                  strokeColor={countryColors[countryName] || '#CCCCCC'}
-                  fillColor={Color(getCountryColor(countryName))
-                    .alpha(0.5)
-                    .string()}
-                  strokeWidth={0.5}
-                />
-              );
-            } else if (feature.geometry.type === 'MultiPolygon') {
-              // Handle MultiPolygon by creating multiple Polygon components
-              return (
-                <React.Fragment key={`country-${index}`}>
-                  {feature.geometry.coordinates.map((poly, polyIndex) => (
-                    <Polygon
-                      key={`country-${index}-part-${polyIndex}`}
-                      coordinates={poly[0].map((coord) => ({
-                        latitude: coord[1],
-                        longitude: coord[0],
-                      }))}
-                      strokeColor={countryColors[countryName] || '#CCCCCC'}
-                      fillColor={Color(getCountryColor(countryName))
-                        .alpha(0.35)
-                        .string()}
-                      strokeWidth={0.5}
-                    />
-                  ))}
+            })}
+            {loadedCountryColors &&
+              flightRecords.map((record) => (
+                <React.Fragment key={record.id}>
+                  <Circle
+                    center={{
+                      latitude: record.origin.latitude,
+                      longitude: record.origin.longitude,
+                    }}
+                    radius={50000 * (latitudeDelta / 60)}
+                    fillColor={Color(record.color).alpha(0.5).string()}
+                    strokeColor={record.color}
+                    strokeWidth={1}
+                  />
+                  <Circle
+                    center={{
+                      latitude: record.destination.latitude,
+                      longitude: record.destination.longitude,
+                    }}
+                    radius={50000 * (latitudeDelta / 60)}
+                    fillColor={Color(record.color).alpha(0.5).string()}
+                    strokeColor={record.color}
+                    strokeWidth={1}
+                  />
+                  <Polyline
+                    coordinates={[
+                      {
+                        latitude: record.origin.latitude,
+                        longitude: record.origin.longitude,
+                      },
+                      {
+                        latitude: record.destination.latitude,
+                        longitude: record.destination.longitude,
+                      },
+                    ]}
+                    strokeColor={record.color}
+                    strokeWidth={2}
+                    onPress={(e) => {
+                      // Prevent the map's onPress from firing
+                      e.stopPropagation();
+                      // Set the selected flight and clear any selected country
+                      setSelectedFlight(record);
+                      setSelectedCountry(null);
+                    }}
+                  />
                 </React.Fragment>
-              );
-            }
-
-            return null;
-          })}
-        </>
-        {flightRecords.map((record) => (
-          <React.Fragment key={record.id}>
-            <Circle
-              center={{
-                latitude: record.origin.latitude,
-                longitude: record.origin.longitude,
-              }}
-              radius={50000 * (latitudeDelta / 60)}
-              fillColor={Color(record.color).alpha(0.5).string()}
-              strokeColor={record.color}
-              strokeWidth={1}
-            />
-            <Circle
-              center={{
-                latitude: record.destination.latitude,
-                longitude: record.destination.longitude,
-              }}
-              radius={50000 * (latitudeDelta / 60)}
-              fillColor={Color(record.color).alpha(0.5).string()}
-              strokeColor={record.color}
-              strokeWidth={1}
-            />
-            <Polyline
-              coordinates={[
-                {
-                  latitude: record.origin.latitude,
-                  longitude: record.origin.longitude,
-                },
-                {
-                  latitude: record.destination.latitude,
-                  longitude: record.destination.longitude,
-                },
-              ]}
-              strokeColor={record.color}
-              strokeWidth={2}
-            />
-          </React.Fragment>
-        ))}
+              ))}
+          </>
+        )}
       </MapView>
 
       <AddFlightSheet bottomSheetRef={bottomSheetRef} />
+
+      {/* Color picker overlay when a country is selected */}
+
+      <ColorPicker
+        visible={showColorModal}
+        title={
+          selectedCountry
+            ? `Select color for ${selectedCountry}`
+            : 'Select color for flight'
+        }
+        selectedItem={
+          (selectedCountry
+            ? getCountryColor(selectedCountry)
+            : selectedFlight?.color) || '#ffffff'
+        }
+        onSelectColor={(color) => {
+          setShowColorModal(false);
+          InteractionManager.runAfterInteractions(() => {
+            if (selectedCountry) {
+              updateCountryColor(selectedCountry, color);
+            } else if (selectedFlight) {
+              updateFlightColorHandler(selectedFlight.id, color);
+            }
+          });
+        }}
+        onCancel={() => {
+          setShowColorModal(false);
+          InteractionManager.runAfterInteractions(() => {
+            setSelectedCountry(null);
+            setSelectedFlight(null);
+          });
+        }}
+      />
     </View>
   );
 };
@@ -387,6 +557,41 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: 'white',
     fontWeight: 'bold',
+  },
+  colorPickerOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    padding: 16,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  colorPickerContainer: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 16,
+  },
+  colorPickerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  colorGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  colorOption: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    margin: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
   },
 });
 

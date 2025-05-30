@@ -1,5 +1,5 @@
 // src/store/flightRecords/flightRecordsSlice.ts
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import type { FlightRecord } from '../../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -19,6 +19,13 @@ export const flightStorageService = {
     async deleteFlight(flightId: string): Promise<void> {
         const existingFlights = await this.loadFlights();
         const updatedFlights = existingFlights.filter(flight => flight.id !== flightId);
+        await this.saveFlights(updatedFlights);
+    },
+    async updateFlightColor(flightId: string, color: string): Promise<void> {
+        const existingFlights = await this.loadFlights();
+        const updatedFlights = existingFlights.map(flight =>
+            flight.id === flightId ? { ...flight, color } : flight
+        );
         await this.saveFlights(updatedFlights);
     },
 };
@@ -66,10 +73,25 @@ export const addFlight = createAsyncThunk(
     }
 );
 
+export const updateFlightColor = createAsyncThunk(
+    'flightRecords/updateColor',
+    async ({ id, color }: { id: string; color: string }) => {
+        await flightStorageService.updateFlightColor(id, color);
+        return { id, color };
+    }
+);
+
 export const flightRecordsSlice = createSlice({
     name: 'flightRecords',
     initialState,
     reducers: {
+        setFlightColor: (state, action: PayloadAction<{ id: string; color: string }>) => {
+            const { id, color } = action.payload;
+            const flight = state.records.find(record => record.id === id);
+            if (flight) {
+                flight.color = color;
+            }
+        },
     },
     extraReducers: (builder) => {
         builder
@@ -112,9 +134,25 @@ export const flightRecordsSlice = createSlice({
             .addCase(addFlight.rejected, (state, action) => {
                 state.loading = false;
                 state.error = action.error.message || 'Add operation failed';
+            })
+            .addCase(updateFlightColor.pending, (state) => {
+                state.loading = true;
+            })
+            .addCase(updateFlightColor.fulfilled, (state, action) => {
+                const { id, color } = action.payload;
+                const flight = state.records.find(record => record.id === id);
+                if (flight) {
+                    flight.color = color;
+                }
+                state.loading = false;
+                state.error = null;
+            })
+            .addCase(updateFlightColor.rejected, (state, action) => {
+                state.loading = false;
+                state.error = action.error.message || 'Update color operation failed';
             });
     },
 });
 
-export const {  } = flightRecordsSlice.actions;
+export const { setFlightColor } = flightRecordsSlice.actions;
 export default flightRecordsSlice.reducer;

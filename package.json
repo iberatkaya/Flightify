@@ -24,11 +24,13 @@
     "react-native-gesture-handler": "^2.21.2",
     "react-native-get-random-values": "^1.11.0",
     "react-native-maps": "^1.20.1",
+    "react-native-modal": "^14.0.0-rc.1",
     "react-native-reanimated": "^3.16.6",
     "react-native-safe-area-context": "^5.0.0",
     "react-native-screens": "^4.4.0",
     "react-native-svg": "^15.11.2",
     "react-redux": "^9.2.0",
+    "reanimated-color-picker": "^4.0.1",
     "uuid": "^11.1.0"
   },
   "devDependencies": {
