@@ -288,11 +288,6 @@ const MapScreen = () => {
         mapType={Platform.OS === 'android' ? 'satellite' : 'satelliteFlyover'}
         onRegionChange={(region) => {
           setLatitudeDelta(region.latitudeDelta);
-        }}
-        onPress={(e) => {
-          // Find which country was clicked
-          const clickedCountry = findCountryAtPoint(e.nativeEvent.coordinate);
-          setSelectedCountry(clickedCountry);
         }}>
         {loadedCountryColors && (
           <>
@@ -331,6 +326,9 @@ const MapScreen = () => {
                   <Polygon
                     key={`country-${index}`}
                     coordinates={coordinates}
+                    onPress={() => {
+                      setSelectedCountry(countryName);
+                    }}
                     strokeColor={
                       Color(countryColors[countryName]).alpha(0.8).string() ||
                       '#CCCCCC'
@@ -347,6 +345,9 @@ const MapScreen = () => {
                   <React.Fragment key={`country-${index}`}>
                     {feature.geometry.coordinates.map((poly, polyIndex) => (
                       <Polygon
+                        onPress={() => {
+                          setSelectedCountry(countryName);
+                        }}
                         key={`country-${index}-part-${polyIndex}`}
                         coordinates={poly[0].map((coord) => ({
                           latitude: coord[1],
