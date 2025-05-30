@@ -152,7 +152,7 @@ const MapScreen = () => {
 
   // Update visited countries based on flight records
   useEffect(() => {
-    const updatedVisitedCountries = { ...visitedCountries };
+    const updatedVisitedCountries: typeof visitedCountries = {};
 
     flightRecords.forEach((record) => {
       // Check each country's polygon to see if it contains origin or destination
@@ -247,22 +247,6 @@ const MapScreen = () => {
     }));
     updateCountryColorInStorage(countryName, color);
     setSelectedCountry(null); // Close the color picker after selection
-  };
-
-  // Function to find which country contains the clicked point
-  const findCountryAtPoint = (point: {
-    latitude: number;
-    longitude: number;
-  }) => {
-    for (const feature of features) {
-      if (!feature.properties || !feature.properties.name) {
-        continue;
-      }
-      if (isPointInCountry(point, feature)) {
-        return feature.properties.name;
-      }
-    }
-    return null;
   };
 
   const [showColorModal, setShowColorModal] = useState(false);
